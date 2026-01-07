@@ -1,5 +1,9 @@
 use std::process::Command;
 use std::io::{self, Write};
+use std::path::PathBuf;
+use std::collections::HashMap;
+
+mod filesystem;
 
 #[derive(Debug)]
 struct ImageInfo {
@@ -83,6 +87,12 @@ fn main() {
     println!("\n═══ Additional Cleanup Options ═══");
     if prompt_yes_no("Run full system prune (removes unused data)?") {
         system_prune();
+    }
+    
+    // Add filesystem cleanup
+    println!("\n═══ Filesystem Cleanup ═══");
+    if prompt_yes_no("Analyze filesystem for cleanup opportunities?") {
+        filesystem_cleanup();
     }
 }
 
@@ -220,4 +230,151 @@ fn prompt_yes_no(question: &str) -> bool {
     io::stdin().read_line(&mut input).unwrap();
     
     matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
+}
+
+fn prompt_for_directory(default_dir: &str) -> PathBuf {
+    print!("Enter directory to analyze (default: {}): ", default_dir);
+    io::stdout().flush().unwrap();
+    
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
+    let input = input.trim();
+    
+    if input.is_empty() {
+        PathBuf::from(default_dir)
+    } else {
+        PathBuf::from(input)
+    }
+}
+
+fn format_size(size: u64) -> String {
+    use humansize::{format_size, DECIMAL};
+    format_size(size, DECIMAL)
+}
+
+fn filesystem_cleanup() {
+    // Get home directory as default
+    let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let default_path = home_dir.to_string_lossy().to_string();
+    
+    let scan_path = prompt_for_directory(&default_path);
+    
+    if !scan_path.exists() {
+        eprintln!("Error: Directory does not exist: {}", scan_path.display());
+        return;
+    }
+    
+    println!("\nScanning {}...\n", scan_path.display());
+    
+    // Find large files
+    println!("Scanning for large files...");
+    let large_files = filesystem::find_large_files(
+        &scan_path, 
+        100, // 100MB minimum
+        |_path, _count| {}
+    );
+    
+    // Find duplicates
+    println!("\nChecking for duplicates...");
+    let duplicates = filesystem::find_duplicates(
+        &scan_path,
+        |_msg, _current, _total| {}
+    );
+    
+    // Find cache directories
+    println!("\nIdentifying cache directories...");
+    let cache_dirs = filesystem::find_cache_directories(
+        &scan_path,
+        |_path| {}
+    );
+    
+    // Display results
+    println!("\n═══ Scan Results ═══\n");
+    
+    // Top 10 largest files
+    println!("Top 10 Largest Files:");
+    if large_files.is_empty() {
+        println!("  No large files found (>100MB)\n");
+    } else {
+        for (i, file) in large_files.iter().take(10).enumerate() {
+            println!("{}. {} - {}", 
+                i + 1, 
+                format_size(file.size), 
+                file.path.display()
+            );
+        }
+        println!();
+    }
+    
+    // Duplicate files
+    let mut total_duplicate_size = 0u64;
+    
+    for group in &duplicates {
+        if group.len() > 1 {
+            let file_size = group[0].size;
+            total_duplicate_size += file_size * (group.len() - 1) as u64;
+        }
+    }
+    
+    println!("Duplicate Files ({} groups, {} reclaimable):", 
+        duplicates.len(), 
+        format_size(total_duplicate_size)
+    );
+    
+    if duplicates.is_empty() {
+        println!("  No duplicate files found\n");
+    } else {
+        for (i, group) in duplicates.iter().take(5).enumerate() {
+            println!("  Group {}: {} copies ({} each)", 
+                i + 1, 
+                group.len(), 
+                format_size(group[0].size)
+            );
+            for file in group.iter().take(3) {
+                println!("    - {}", file.path.display());
+            }
+            if group.len() > 3 {
+                println!("    ... and {} more", group.len() - 3);
+            }
+        }
+        if duplicates.len() > 5 {
+            println!("  ... and {} more groups", duplicates.len() - 5);
+        }
+        println!();
+    }
+    
+    // Cache directories
+    let mut cache_by_type: HashMap<String, Vec<&filesystem::CacheInfo>> = HashMap::new();
+    let mut total_cache_size = 0u64;
+    
+    for cache in &cache_dirs {
+        cache_by_type.entry(cache.cache_type.clone()).or_insert_with(Vec::new).push(cache);
+        total_cache_size += cache.size;
+    }
+    
+    println!("Cache Directories ({} total):", format_size(total_cache_size));
+    if cache_dirs.is_empty() {
+        println!("  No cache directories found\n");
+    } else {
+        for (cache_type, caches) in cache_by_type.iter() {
+            let type_size: u64 = caches.iter().map(|c| c.size).sum();
+            println!("  {}: {} ({} locations)", 
+                cache_type, 
+                format_size(type_size), 
+                caches.len()
+            );
+        }
+        println!();
+    }
+    
+    // Offer cleanup options
+    if !duplicates.is_empty() {
+        println!("═══ Cleanup Options ═══");
+        println!("Note: Duplicate and cache cleanup requires manual review.");
+        println!("Please review the paths above and delete files manually if desired.\n");
+    }
+    
+    println!("Total potential savings: {}", 
+        format_size(total_duplicate_size + total_cache_size)
+    );
 }

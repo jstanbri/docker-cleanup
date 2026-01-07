@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+walkdir = "2"
+sha2 = "0.10"
+indicatif = "0.17"
+humansize = "2"
+dirs = "5"
