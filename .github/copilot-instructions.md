@@ -10,7 +10,7 @@ AI agents are autonomous or semi-autonomous systems designed to assist with soft
 
 ## Includes
 
-
+@include instructions/project.md
 
 ### 1. Clarity and Communication
 - **Clear Intent**: Agents must clearly communicate their understanding of tasks before execution
