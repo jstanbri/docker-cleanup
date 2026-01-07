@@ -325,7 +325,6 @@ fn filesystem_cleanup() {
         println!("  No duplicate files found\n");
     } else {
         for (i, group) in duplicates.iter().take(5).enumerate() {
-            if i >= 5 { break; }
             println!("  Group {}: {} copies ({} each)", 
                 i + 1, 
                 group.len(), 
