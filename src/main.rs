@@ -232,6 +232,32 @@ fn prompt_yes_no(question: &str) -> bool {
     matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
 }
 
+fn calculate_duplicate_reclaimable(duplicate_groups: &[Vec<filesystem::FileInfo>]) -> u64 {
+    duplicate_groups
+        .iter()
+        .map(|group| {
+            if group.len() > 1 {
+                group[0].size * (group.len() as u64 - 1)
+            } else {
+                0
+            }
+        })
+        .sum()
+}
+
+fn group_caches_by_type(cache_dirs: &[filesystem::CacheInfo]) -> std::collections::HashMap<String, Vec<&filesystem::CacheInfo>> {
+    let mut cache_by_type: std::collections::HashMap<String, Vec<&filesystem::CacheInfo>> = 
+        std::collections::HashMap::new();
+    
+    for cache in cache_dirs {
+        cache_by_type.entry(cache.cache_type.clone())
+            .or_insert_with(Vec::new)
+            .push(cache);
+    }
+    
+    cache_by_type
+}
+
 fn run_filesystem_cleanup() {
     // Determine scan path
     print!("Enter directory to scan (or press Enter for current directory): ");
@@ -277,16 +303,7 @@ fn run_filesystem_cleanup() {
     if analysis.duplicate_groups.is_empty() {
         println!("No duplicate files found");
     } else {
-        let duplicate_reclaimable: u64 = analysis.duplicate_groups
-            .iter()
-            .map(|group| {
-                if group.len() > 1 {
-                    group[0].size * (group.len() as u64 - 1)
-                } else {
-                    0
-                }
-            })
-            .sum();
+        let duplicate_reclaimable = calculate_duplicate_reclaimable(&analysis.duplicate_groups);
         
         println!("Found {} groups, {} reclaimable:", 
             analysis.duplicate_groups.len(),
@@ -320,14 +337,7 @@ fn run_filesystem_cleanup() {
         let cache_total: u64 = analysis.cache_dirs.iter().map(|c| c.size).sum();
         println!("Total: {}\n", format_file_size(cache_total));
         
-        let mut cache_by_type: std::collections::HashMap<String, Vec<&filesystem::CacheInfo>> = 
-            std::collections::HashMap::new();
-        
-        for cache in &analysis.cache_dirs {
-            cache_by_type.entry(cache.cache_type.clone())
-                .or_insert_with(Vec::new)
-                .push(cache);
-        }
+        let cache_by_type = group_caches_by_type(&analysis.cache_dirs);
         
         for (cache_type, caches) in cache_by_type.iter() {
             let type_total: u64 = caches.iter().map(|c| c.size).sum();
@@ -395,14 +405,7 @@ fn run_filesystem_cleanup() {
         if prompt_yes_no("Clear cache directories?") {
             println!("Select cache types to clear:");
             
-            let mut cache_by_type: std::collections::HashMap<String, Vec<&filesystem::CacheInfo>> = 
-                std::collections::HashMap::new();
-            
-            for cache in &analysis.cache_dirs {
-                cache_by_type.entry(cache.cache_type.clone())
-                    .or_insert_with(Vec::new)
-                    .push(cache);
-            }
+            let cache_by_type = group_caches_by_type(&analysis.cache_dirs);
             
             for (i, (cache_type, caches)) in cache_by_type.iter().enumerate() {
                 let type_total: u64 = caches.iter().map(|c| c.size).sum();

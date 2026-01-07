@@ -8,11 +8,14 @@ use sha2::{Sha256, Digest};
 use humansize::{format_size, BINARY};
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct FileInfo {
     pub path: PathBuf,
     pub size: u64,
+    // These fields are populated and part of the public API
+    // but may not be directly used in the current implementation
+    #[allow(dead_code)]
     pub last_accessed: SystemTime,
+    #[allow(dead_code)]
     pub last_modified: SystemTime,
 }
 
@@ -51,20 +54,24 @@ impl Default for AnalysisConfig {
 
 /// Check if a path should be excluded from scanning
 fn should_exclude_path(path: &Path) -> bool {
-    let excluded_dirs = [
-        "/proc", "/sys", "/dev", "/run", "/boot",
-        "System Volume Information", "Windows", "Program Files",
-        "AppData/Local/Temp", "$Recycle.Bin",
-    ];
-    
     let path_str = path.to_string_lossy();
     
-    // Check for exact matches at the start of path for system directories
-    for excluded in &excluded_dirs {
-        if path_str.starts_with(excluded) || path_str.contains(&format!("/{}/", excluded)) {
-            return true;
-        }
+    // Check for system directories
+    if path_str.starts_with("/proc") || path_str.starts_with("/sys") 
+        || path_str.starts_with("/dev") || path_str.starts_with("/run") 
+        || path_str.starts_with("/boot") {
+        return true;
     }
+    
+    // Check for Windows system directories
+    if path_str.contains("System Volume Information") 
+        || path_str.contains("Windows") 
+        || path_str.contains("Program Files")
+        || path_str.contains("AppData/Local/Temp") 
+        || path_str.contains("$Recycle.Bin") {
+        return true;
+    }
+    
     false
 }
 
